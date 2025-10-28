@@ -3,6 +3,10 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 from datetime import datetime
+import pandas as pd
+import io
+from docx import Document
+import base64
 
 # Set page configuration
 st.set_page_config(page_title="Elevator Earthpit Calculator", layout="wide")
@@ -134,40 +138,6 @@ st.markdown(f"**Filling Material:** `{pit_configs[pit_type]['filling']}`")
 st.markdown(f"**Expected Lifetime:** `{pit_configs[pit_type]['lifetime']}`")
 st.markdown(f"**Maintenance Requirements:** `{pit_configs[pit_type]['maintenance']}`")
 
-# Cost Estimation Section
-st.subheader("💰 Cost Estimation")
-base_costs = {
-    "Regular Pit": {
-        "GI (Galvanized Iron)": 15000,
-        "Copper": 25000
-    },
-    "Chemical Earthing Pit": {
-        "GI (Galvanized Iron)": 20000,
-        "Copper": 30000
-    },
-    "Maintenance-Free Pit": {
-        "GI (Galvanized Iron)": 25000,
-        "Copper": 35000
-    }
-}
-
-# Calculate additional costs based on depth and soil type
-depth_cost = pit_depth * 1000  # Additional cost per meter depth
-soil_complexity = {
-    "Loamy Soil": 1.0,
-    "Clay Soil": 1.2,
-    "Sandy Soil": 1.3,
-    "Rocky Soil": 1.8,
-    "Black Cotton Soil": 1.4
-}
-
-base_cost = base_costs[pit_type][plate_material]
-total_cost = base_cost + (depth_cost * soil_complexity[soil_type])
-
-st.markdown(f"**Base Installation Cost:** `₹{base_cost:,.2f}`")
-st.markdown(f"**Additional Depth Cost:** `₹{depth_cost:,.2f}`")
-st.markdown(f"**Soil Complexity Factor:** `{soil_complexity[soil_type]}`")
-st.markdown(f"**Estimated Total Cost:** `₹{total_cost:,.2f}`")
 
 # Visual Representation
 st.subheader("🎯 Visual Representation")
@@ -258,33 +228,90 @@ for season, impact in weather_impact.items():
 
 # Inspection Schedule Generator
 st.subheader("📅 Recommended Inspection Schedule")
-current_year = datetime.now().year
-inspection_schedule = []
+# Create inspection activities dataframe
+basic_activities = [
+    {"Activity": "Visual Inspection", "Frequency": "Every inspection", "Notes": "Check for physical damage"},
+    {"Activity": "Resistance Measurement", "Frequency": "Every inspection", "Notes": "Should be ≤ 10 ohms"},
+    {"Activity": "Connection Check", "Frequency": "Every inspection", "Notes": "Verify all connections are tight"}
+]
 
 if pit_type == "Regular Pit":
-    frequency = 3  # months
+    additional_activities = [
+        {"Activity": "Moisture Check", "Frequency": "Monthly", "Notes": "Maintain adequate moisture"},
+        {"Activity": "Salt/Coal Level Check", "Frequency": "Quarterly", "Notes": "Replenish if needed"}
+    ]
 elif pit_type == "Chemical Earthing Pit":
-    frequency = 6  # months
-else:  # Maintenance-Free Pit
-    frequency = 12  # months
+    additional_activities = [
+        {"Activity": "Chemical Compound Check", "Frequency": "Every 2 years", "Notes": "Check compound conductivity"}
+    ]
+else:
+    additional_activities = []
 
-for month in range(1, 13, frequency):
-    inspection_date = f"{current_year}-{month:02d}-01"
-    inspection_schedule.append({
-        "Date": inspection_date,
-        "Activities": [
-            "Visual Inspection",
-            "Resistance Measurement",
-            "Connection Check"
-        ] + (["Moisture Check", "Salt/Coal Level Check"] if pit_type == "Regular Pit" else [])
-          + (["Chemical Compound Check"] if pit_type == "Chemical Earthing Pit" else [])
-    })
+inspection_df = pd.DataFrame(basic_activities + additional_activities)
 
-st.markdown("**Inspection Dates and Activities:**")
-for inspection in inspection_schedule:
-    st.markdown(f"**{inspection['Date']}**")
-    for activity in inspection['Activities']:
-        st.markdown(f"- {activity}")
+# Display the inspection table
+st.markdown("### Inspection Schedule and Activities")
+st.dataframe(inspection_df, use_container_width=True)
+
+# Download buttons
+def to_excel():
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        inspection_df.to_excel(writer, sheet_name='Inspection Schedule', index=False)
+    return output.getvalue()
+
+def to_word():
+    doc = Document()
+    doc.add_heading('Earthpit Inspection Schedule', 0)
+    
+    # Add pit specifications
+    doc.add_heading('Pit Specifications', level=1)
+    doc.add_paragraph(f'Pit Type: {pit_type}')
+    doc.add_paragraph(f'Plate Material: {plate_material}')
+    doc.add_paragraph(f'Soil Type: {soil_type}')
+    
+    # Add inspection table
+    doc.add_heading('Inspection Schedule', level=1)
+    table = doc.add_table(rows=1, cols=3)
+    table.style = 'Table Grid'
+    
+    # Add header row
+    header_cells = table.rows[0].cells
+    header_cells[0].text = 'Activity'
+    header_cells[1].text = 'Frequency'
+    header_cells[2].text = 'Notes'
+    
+    # Add data rows
+    for _, row in inspection_df.iterrows():
+        row_cells = table.add_row().cells
+        row_cells[0].text = row['Activity']
+        row_cells[1].text = row['Frequency']
+        row_cells[2].text = row['Notes']
+    
+    # Save to bytes
+    doc_io = io.BytesIO()
+    doc.save(doc_io)
+    doc_io.seek(0)
+    return doc_io.getvalue()
+
+col1, col2 = st.columns(2)
+with col1:
+    excel_data = to_excel()
+    st.download_button(
+        label="📥 Download Excel Report",
+        data=excel_data,
+        file_name=f"earthpit_inspection_{pit_type.lower().replace(' ', '_')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+with col2:
+    word_data = to_word()
+    st.download_button(
+        label="📄 Download Word Report",
+        data=word_data,
+        file_name=f"earthpit_inspection_{pit_type.lower().replace(' ', '_')}.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
 
 # Maintenance Guidelines
 st.header("🧰 Maintenance Guidelines")
