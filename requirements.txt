@@ -1,3 +1,9 @@
 streamlit
+math
 matplotlib
 numpy
+datetime
+pandas
+io
+python-docx
+base64
